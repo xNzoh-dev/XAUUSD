@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAU/USD Live Dashboard</title>
+<style>
+  :root {
+    --bg: #0d0d0d; --bg2: #141414; --bg3: #1a1a1a;
+    --border: rgba(255,255,255,0.08);
+    --text: #e8e8e8; --muted: #666;
+    --green: #1D9E75; --red: #E24B4A; --blue: #378ADD; --amber: #BA7517;
+    --green-bg: rgba(29,158,117,0.12); --red-bg: rgba(226,75,74,0.12);
+    --blue-bg: rgba(55,138,221,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; font-size: 13px; }
+  #app { display: grid; grid-template-rows: 48px 1fr; height: 100vh; }
+
+  /* TOP BAR */
+  #topbar { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+  .tb-left { display: flex; align-items: center; gap: 16px; }
+  .asset { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .price-big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .delta { font-size: 12px; padding: 2px 8px; border-radius: 3px; }
+  .delta.up { background: var(--green-bg); color: var(--green); }
+  .delta.dn { background: var(--red-bg); color: var(--red); }
+  .conn-badge { font-size: 11px; padding: 3px 10px; border-radius: 3px; border: 1px solid; }
+  .conn-badge.connected { border-color: var(--green); color: var(--green); }
+  .conn-badge.disconnected { border-color: var(--red); color: var(--red); }
+
+  /* MAIN */
+  #main { display: grid; grid-template-columns: 1fr 300px; overflow: hidden; }
+
+  /* CHART AREA */
+  #chartArea { display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
+  .metrics-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+  .metric-lbl { font-size: 10px; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .metric-val { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  canvas { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; width: 100%; }
+
+  /* PATTERN BADGES */
+  .patterns-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pattern-badge { font-size: 11px; padding: 4px 10px; border-radius: 3px; border: 1px solid; font-weight: 600; letter-spacing: 0.3px; }
+  .pattern-badge.bull { border-color: var(--green); color: var(--green); background: var(--green-bg); }
+  .pattern-badge.bear { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+  .pattern-badge.neutral { border-color: var(--amber); color: var(--amber); background: rgba(186,117,23,0.1); }
+
+  /* SIDE PANEL */
+  #side { background: var(--bg2); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .side-section { border-bottom: 1px solid var(--border); padding: 12px 14px; }
+  .side-title { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+
+  /* SR LEVELS */
+  .sr-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .sr-item:last-child { border-bottom: none; }
+  .sr-lbl { font-size: 11px; color: var(--muted); }
+  .sr-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sr-res { color: var(--red); }
+  .sr-sup { color: var(--green); }
+  .sr-entry { color: var(--blue); }
+
+  /* SIGNAL FEED */
+  #feed { flex: 1; overflow-y: auto; }
+  .feed-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+  .feed-item:hover { background: var(--bg3); }
+  .feed-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .feed-signal { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 3px; }
+  .feed-signal.BUY { background: var(--green-bg); color: var(--green); }
+  .feed-signal.SELL { background: var(--red-bg); color: var(--red); }
+  .feed-signal.NEUTRAL { background: rgba(186,117,23,0.1); color: var(--amber); }
+  .feed-time { font-size: 10px; color: var(--muted); }
+  .feed-msg { font-size: 11px; color: var(--muted); }
+  .feed-price { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* CONFIG */
+  #configUrl { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-family: monospace; font-size: 11px; padding: 6px 8px; border-radius: 4px; outline: none; }
+  #connectBtn { margin-top: 8px; width: 100%; padding: 7px; background: var(--blue-bg); border: 1px solid var(--blue); color: var(--blue); font-family: monospace; font-size: 12px; border-radius: 4px; cursor: pointer; }
+  #connectBtn:hover { background: rgba(55,138,221,0.2); }
+
+  .empty-feed { padding: 20px 14px; color: var(--muted); font-size: 11px; text-align: center; }
+
+  /* RSI BAR */
+  .rsi-bar-wrap { height: 4px; background: var(--bg3); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .rsi-bar { height: 100%; border-radius: 2px; transition: width 0.4s; }
+
+  @media (max-width: 700px) {
+    #main { grid-template-columns: 1fr; }
+    #side { display: none; }
+    .metrics-row { grid-template-columns: repeat(3,1fr); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="tb-left">
+      <div class="live-dot" id="liveDot"></div>
+      <div class="asset">XAU/USD</div>
+      <span style="color:var(--muted);font-size:11px;">5m · Capital.com</span>
+    </div>
+    <div class="tb-left">
+      <div class="price-big" id="livePrice">—</div>
+      <div class="delta" id="liveDelta">—</div>
+    </div>
+    <div class="conn-badge disconnected" id="connBadge">DISCONNECTED</div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <!-- CHART AREA -->
+    <div id="chartArea">
+      <div class="metrics-row">
+        <div class="metric"><div class="metric-lbl">Open</div><div class="metric-val" id="mO">—</div></div>
+        <div class="metric"><div class="metric-lbl">High</div><div class="metric-val" style="color:var(--green)" id="mH">—</div></div>
+        <div class="metric"><div class="metric-lbl">Low</div><div class="metric-val" style="color:var(--red)" id="mL">—</div></div>
+        <div class="metric"><div class="metric-lbl">RSI</div><div class="metric-val" id="mRsi">—</div>
+          <div class="rsi-bar-wrap"><div class="rsi-bar" id="rsiBar" style="width:50%;background:var(--amber)"></div></div>
+        </div>
+        <div class="metric"><div class="metric-lbl">Signaux reçus</div><div class="metric-val" id="mCount">0</div></div>
+      </div>
+
+      <div class="patterns-row" id="patternBadges">
+        <span class="pattern-badge neutral">En attente de données...</span>
+      </div>
+
+      <canvas id="priceChart" height="280"></canvas>
+
+      <div style="color:var(--muted);font-size:11px;padding:4px 0;">
+        Dernière mise à jour : <span id="lastUpdate">—</span>
+        &nbsp;·&nbsp; <span id="signalCount">0</span> signal(s) reçu(s)
+      </div>
+    </div>
+
+    <!-- SIDE PANEL -->
+    <div id="side">
+      <!-- URL CONFIG -->
+      <div class="side-section">
+        <div class="side-title">Serveur Webhook</div>
+        <input id="configUrlInput" type="text" placeholder="https://ton-app.onrender.com" id="configUrlInput" />
+        <button id="connectBtn" onclick="connectSSE()">Connecter ↗</button>
+      </div>
+
+      <!-- S/R LEVELS -->
+      <div class="side-section">
+        <div class="side-title">Niveaux S/R live</div>
+        <div id="srLevels">
+          <div class="sr-item"><span class="sr-lbl">Résistance</span><span class="sr-val sr-res" id="srRes1">—</span></div>
+          <div class="sr-item"><span class="sr-lbl">Résistance</span><span class="sr-val sr-res" id="srRes2">—</span></div>
+          <div class="sr-item"><span class="sr-lbl">Prix actuel</span><span class="sr-val" id="srCur">—</span></div>
+          <div class="sr-item"><span class="sr-lbl">Support</span><span class="sr-val sr-sup" id="srSup1">—</span></div>
+          <div class="sr-item"><span class="sr-lbl">Entrée long</span><span class="sr-val sr-entry">4994.88</span></div>
+        </div>
+      </div>
+
+      <!-- LIVE FEED -->
+      <div class="side-title" style="padding:12px 14px 0;">Flux d'alertes live</div>
+      <div id="feed">
+        <div class="empty-feed">En attente de signaux TradingView...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let es = null;
+let signalCount = 0;
+let priceHistory = [];
+let basePrice = null;
+
+const canvas = document.getElementById('priceChart');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = 280 * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  drawPriceChart();
+}
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+function drawPriceChart() {
+  const W = canvas.offsetWidth, H = 280;
+  ctx.clearRect(0, 0, W, H);
+  if (priceHistory.length < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '13px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('En attente de données...', W/2, H/2);
+    return;
+  }
+  const prices = priceHistory.map(p => p.price);
+  const times = priceHistory.map(p => p.time);
+  const minP = Math.min(...prices) - 2, maxP = Math.max(...prices) + 2;
+  const PAD = { t:20, r:55, b:25, l:10 };
+  const cW = W - PAD.l - PAD.r, cH = H - PAD.t - PAD.b;
+  const toY = p => PAD.t + (maxP - p) / (maxP - minP) * cH;
+  const toX = i => PAD.l + (i / (priceHistory.length - 1)) * cW;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+  const steps = 5;
+  for (let i = 0; i <= steps; i++) {
+    const p = minP + (maxP - minP) * i / steps;
+    const y = toY(p);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.toFixed(1), W - PAD.r + 4, y + 3);
+  }
+
+  // Price line
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  const isUp = prices[prices.length-1] >= prices[0];
+  grad.addColorStop(0, isUp ? 'rgba(29,158,117,0.3)' : 'rgba(226,75,74,0.3)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  ctx.beginPath();
+  priceHistory.forEach((p, i) => {
+    const x = toX(i), y = toY(p.price);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(toX(priceHistory.length-1), H);
+  ctx.lineTo(PAD.l, H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  priceHistory.forEach((p, i) => {
+    const x = toX(i), y = toY(p.price);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = isUp ? '#1D9E75' : '#E24B4A';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Signal dots
+  priceHistory.forEach((p, i) => {
+    if (p.signal === 'BUY' || p.signal === 'SELL') {
+      const x = toX(i), y = toY(p.price);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI*2);
+      ctx.fillStyle = p.signal === 'BUY' ? '#1D9E75' : '#E24B4A';
+      ctx.fill();
+    }
+  });
+
+  // Time labels
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.floor(priceHistory.length / 5));
+  for (let i = 0; i < priceHistory.length; i += step) {
+    ctx.fillText(times[i], toX(i), H - 8);
+  }
+}
+
+function onSignal(data) {
+  signalCount++;
+  document.getElementById('mCount').textContent = signalCount;
+  document.getElementById('signalCount').textContent = signalCount;
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('fr-FR');
+
+  if (data.price) {
+    if (!basePrice) basePrice = data.price;
+    const delta = data.price - basePrice;
+    const pct = (delta / basePrice * 100).toFixed(2);
+    const isUp = delta >= 0;
+
+    document.getElementById('livePrice').textContent = data.price.toFixed(2);
+    const dEl = document.getElementById('liveDelta');
+    dEl.textContent = (isUp?'+':'') + delta.toFixed(2) + ' (' + pct + '%)';
+    dEl.className = 'delta ' + (isUp ? 'up' : 'dn');
+    document.getElementById('srCur').textContent = data.price.toFixed(2);
+
+    priceHistory.push({
+      price: data.price,
+      time: new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}),
+      signal: data.signal
+    });
+    if (priceHistory.length > 80) priceHistory.shift();
+    drawPriceChart();
+  }
+
+  if (data.ohlcv) {
+    if (data.ohlcv.open) document.getElementById('mO').textContent = data.ohlcv.open.toFixed(2);
+    if (data.ohlcv.high) document.getElementById('mH').textContent = data.ohlcv.high.toFixed(2);
+    if (data.ohlcv.low) document.getElementById('mL').textContent = data.ohlcv.low.toFixed(2);
+  }
+
+  if (data.rsi) {
+    const rsi = data.rsi;
+    document.getElementById('mRsi').textContent = rsi.toFixed(1);
+    const bar = document.getElementById('rsiBar');
+    bar.style.width = rsi + '%';
+    bar.style.background = rsi < 30 ? '#1D9E75' : rsi > 70 ? '#E24B4A' : '#BA7517';
+  }
+
+  if (data.sr) {
+    if (data.sr.resistance) document.getElementById('srRes1').textContent = data.sr.resistance.toFixed(2);
+    if (data.sr.support) document.getElementById('srSup1').textContent = data.sr.support.toFixed(2);
+  }
+
+  if (data.pattern) {
+    const badges = document.getElementById('patternBadges');
+    const sig = data.signal || 'NEUTRAL';
+    const cls = sig === 'BUY' ? 'bull' : sig === 'SELL' ? 'bear' : 'neutral';
+    const badge = document.createElement('span');
+    badge.className = 'pattern-badge ' + cls;
+    badge.textContent = data.pattern;
+    if (badges.querySelector('.neutral')?.textContent === 'En attente de données...') badges.innerHTML = '';
+    badges.prepend(badge);
+    if (badges.children.length > 6) badges.removeChild(badges.lastChild);
+  }
+
+  addFeedItem(data);
+}
+
+function addFeedItem(data) {
+  const feed = document.getElementById('feed');
+  if (feed.querySelector('.empty-feed')) feed.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  const sig = data.signal || 'NEUTRAL';
+  const time = new Date().toLocaleTimeString('fr-FR');
+  item.innerHTML = `
+    <div class="feed-top">
+      <span class="feed-signal ${sig}">${sig}</span>
+      <span class="feed-time">${time}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+      <span class="feed-msg">${data.pattern || data.message || '—'}</span>
+      <span class="feed-price">${data.price ? data.price.toFixed(2) : '—'}</span>
+    </div>
+  `;
+  feed.prepend(item);
+  if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+function connectSSE() {
+  if (es) { es.close(); es = null; }
+  const url = (document.getElementById('configUrlInput').value.trim() || window.location.origin).replace(/\/$/, '');
+  const badge = document.getElementById('connBadge');
+  badge.textContent = 'CONNECTING...';
+  badge.className = 'conn-badge disconnected';
+
+  es = new EventSource(url + '/stream');
+  es.onopen = () => {
+    badge.textContent = 'LIVE';
+    badge.className = 'conn-badge connected';
+    document.getElementById('liveDot').style.background = '#1D9E75';
+  };
+  es.onmessage = (e) => {
+    try { onSignal(JSON.parse(e.data)); } catch(err) {}
+  };
+  es.onerror = () => {
+    badge.textContent = 'DISCONNECTED';
+    badge.className = 'conn-badge disconnected';
+    document.getElementById('liveDot').style.background = '#E24B4A';
+  };
+}
+
+drawPriceChart();
+
+// Auto-détecte l'URL et se connecte immédiatement
+window.addEventListener('load', () => {
+  const inp = document.getElementById('configUrlInput');
+  if (!inp.value || inp.value.includes('ton-app')) {
+    inp.value = window.location.origin;
+  }
+  connectSSE();
+});
+</script>
+</body>
+</html>
